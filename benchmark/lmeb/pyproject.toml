@@ -1,0 +1,30 @@
+[project]
+name = "loom-bench-lmeb"
+version = "0.1.0"
+description = "LMEB component benchmark: MTEB retrieval evaluation of a candidate embedding model, gated to LMEB's non-overlapping subsets (ADR-0004)"
+requires-python = ">=3.12"
+dependencies = [
+  # Exact versions from LMEB's own requirements.txt (verified 2026-09-01,
+  # https://github.com/KaLM-Embedding/LMEB/blob/a02ae842598183ed162fc90c58ffaae5eec89f12/requirements.txt).
+  # mteb is the standard harness LMEB registers its 22 tasks into (ADR-0002).
+  # datasets/pydantic are imported directly by the cloned repo's
+  # src/abstasks/*.py and src/tasks/*.py (data/official, see fetch.py).
+  # transformers/torch/safetensors/tqdm are what mteb's own model loading
+  # and encoding pipeline need at run time.
+  "mteb==2.3.0",
+  "datasets==2.21.0",
+  "transformers==4.57.3",
+  "torch==2.9.0",
+  "numpy==2.4.3",
+  "pydantic==2.12.5",
+  "safetensors==0.7.0",
+  "tqdm==4.67.1",
+  # Not pinned by LMEB's requirements.txt (their README downloads eval_data/
+  # via the `huggingface-cli` binary, not this library); floor only, since no
+  # primary source pins an exact version. fetch.py needs snapshot_download(),
+  # stable across huggingface_hub releases for a long time.
+  "huggingface-hub>=0.25",
+]
+
+[tool.uv]
+package = false

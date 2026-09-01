@@ -1,0 +1,25 @@
+[project]
+name = "beam"
+version = "0.1.0"
+description = "BEAM (Beyond a Million Tokens) long-term-memory benchmark adapter for the Loom bench harness"
+requires-python = ">=3.12"
+dependencies = [
+    # dataset download (fetch.py)
+    "huggingface-hub==0.34.3",
+    "pandas==2.3.0",
+    "pyarrow==20.0.0",
+    # required to import and drive the official evaluator cloned into
+    # data/official/ (src/evaluation/compute_metrics.py, src/llm.py) --
+    # versions match https://github.com/mohammadtavakoli78/BEAM's own
+    # requirements.txt at the pinned commit (see _common.py GIT_REVISION),
+    # trimmed to what the evaluation path actually imports.
+    "nltk==3.9.1",
+    "rouge-score==0.1.2",
+    "scipy==1.16.1",
+    "json-repair==0.44.1",
+    "sentence-transformers==5.0.0",
+    "langchain-openai==0.3.19",
+]
+
+[tool.uv]
+package = false

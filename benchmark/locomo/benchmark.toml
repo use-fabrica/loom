@@ -1,0 +1,23 @@
+name = "locomo"
+kind = "e2e"
+
+[dataset]
+# https://github.com/snap-research/locomo, data/locomo10.json at this commit.
+source = "https://github.com/snap-research/locomo"
+revision = "3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376"
+
+[judge]
+# Exact dated snapshot LongMemEval's model_zoo maps "gpt-4o" to; see
+# https://github.com/xiaowu0162/LongMemEval src/evaluation/evaluate_qa.py.
+model = "gpt-4o-2024-08-06"
+prompt_version = "v1"
+
+[answerer]
+# Unpinned: the Engine's Ingest/Retrieve contract is blocked on issue #1, so
+# there is no Answerer to pin yet. Harness must refuse real e2e runs while
+# this is empty.
+model = ""
+
+[entrypoints]
+fetch = "fetch.py"
+score = "score.py"

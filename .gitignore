@@ -1,1 +1,4 @@
 .direnv/
+benchmark/*/data/
+.venv/
+__pycache__/

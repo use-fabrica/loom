@@ -41,7 +41,18 @@
             curl
             protobuf
             pkg-config
+
+            # Benchmark harness (Python)
+            uv
+            python312
+            git
           ];
+
+          # Force uv onto the nix-provided interpreter: no downloaded
+          # standalone Pythons, so every benchmark env is reproducible
+          # from the flake pin alone.
+          UV_PYTHON = "${pkgs.python312}/bin/python3.12";
+          UV_PYTHON_DOWNLOADS = "never";
 
           # Corepack refuses to write shims into the read-only Nix store, so
           # point it at a project-local, gitignored directory instead.

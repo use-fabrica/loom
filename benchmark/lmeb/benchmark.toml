@@ -1,0 +1,16 @@
+name = "lmeb"
+kind = "component"
+
+[dataset]
+# https://huggingface.co/datasets/KaLM-Embedding/LMEB - queries/corpus/qrels
+# for all 22 constituent datasets, laid out as <MemType>/<Dataset>/<subset>/
+# {queries,corpus}.jsonl (+ qrels.tsv, candidates.jsonl where applicable) -
+# exactly what data/official/src/abstasks/LocalRetrieval.py (cloned by
+# fetch.py, see ADR-0003) expects under LOCAL_DATA_PREFIX. Revision is the
+# dataset repo's HF API `sha`, verified 2026-09-01.
+source = "KaLM-Embedding/LMEB"
+revision = "f9d4294be4a24b8c16d6bfb59d56a6fec4bd95c0"
+
+[entrypoints]
+fetch = "fetch.py"
+score = "run.py"

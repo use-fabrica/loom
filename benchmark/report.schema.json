@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/use-fabrica/loom/blob/main/benchmark/report.schema.json",
+  "title": "Report",
+  "description": "The output of a Benchmark Run: scores plus the provenance that reproduces them (Subject identity, dataset version, and, for End-to-end Benchmarks, Judge and Answerer identity). See benchmark/CONTEXT.md.",
+  "type": "object",
+  "properties": {
+    "benchmark": {
+      "type": "string",
+      "description": "The Benchmark's name, matching its benchmark/<name> directory."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Unique identifier for this Run."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subject": {
+      "type": "object",
+      "description": "What this Run measures: an Engine build for an End-to-end Benchmark, a candidate component for a Component Benchmark.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["engine", "embedding_model"]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": ["kind", "id"],
+      "additionalProperties": false
+    },
+    "dataset": {
+      "type": "object",
+      "description": "Fetched dataset provenance.",
+      "properties": {
+        "name": { "type": "string" },
+        "revision": { "type": "string" },
+        "sha256": { "type": "string" }
+      },
+      "required": ["name", "revision", "sha256"],
+      "additionalProperties": false
+    },
+    "judge": {
+      "description": "The pinned LLM (model plus prompt version) used to score answers, or null if this Benchmark's metrics require no Judge.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" },
+            "prompt_version": { "type": "string" }
+          },
+          "required": ["model", "prompt_version"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "answerer": {
+      "description": "The pinned LLM the Harness used to turn a Context Bundle into an answer, or null for Component Benchmarks.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" }
+          },
+          "required": ["model"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Metric name to score.",
+      "additionalProperties": { "type": "number" }
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "benchmark",
+    "run_id",
+    "started_at",
+    "finished_at",
+    "subject",
+    "dataset",
+    "judge",
+    "answerer",
+    "metrics"
+  ],
+  "additionalProperties": false
+}

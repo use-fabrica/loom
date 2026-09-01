@@ -1,0 +1,50 @@
+# LMEB component-benchmark subset classification (ADR-0004).
+#
+# Verified 2026-09-01 against:
+#  - the LMEB paper (Zhao et al., arXiv:2603.12572)
+#  - the KaLM-Embedding/LMEB repo at commit a02ae842598183ed162fc90c58ffaae5eec89f12
+#    (lmeb_benchmark.py, src/__init__.py, src/tasks/*.py)
+#  - the KaLM-Embedding/LMEB dataset on Hugging Face at revision
+#    f9d4294be4a24b8c16d6bfb59d56a6fec4bd95c0
+#
+# Task names are exact MTEB task names, as registered by src/__init__.py and
+# as passed to `mteb.get_tasks(tasks=[...])`. See README.md for the full
+# per-dataset source/license table and docs/adr/0004 for the rule.
+
+[selection]
+# LMEB's non-overlapping subsets: independent of LoCoMo/LongMemEval, safe to
+# drive embedding-model selection (ADR-0004). 20 tasks / 182 MTEB sub-tasks.
+tasks = [
+  # Episodic memory
+  "EPBench",
+  "KnowMeBench",
+  # Dialogue memory (independent of LoCoMo/LongMemEval)
+  "ConvoMem",
+  "MemBench",
+  "REALTALK",
+  "TMD",
+  # Semantic memory
+  "QASPER",
+  "NovelQA",
+  "PeerQA",
+  "CovidQA",
+  "ESGReports",
+  "MLDR",
+  "LooGLE",
+  "LMEB_SciFact",
+  # Procedural memory
+  "Gorilla",
+  "ToolBench",
+  "ReMe",
+  "Proced_mem_bench",
+  "MemGovern",
+  "DeepPlanning",
+]
+
+[diagnostic]
+# LoCoMo/LongMemEval repackaged as retrieval corpora. Visible in Reports,
+# never a selection criterion (ADR-0004). 2 tasks / 11 MTEB sub-tasks.
+tasks = [
+  "LoCoMo",
+  "LongMemEval",
+]

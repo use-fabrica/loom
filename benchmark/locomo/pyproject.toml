@@ -1,0 +1,24 @@
+[project]
+name = "loom-bench-locomo"
+version = "0.1.0"
+description = "LoCoMo end-to-end long-term-memory benchmark adapter for Loom"
+requires-python = ">=3.12"
+dependencies = [
+  # Runtime deps of the official evaluation code we import from
+  # data/official/task_eval/evaluation.py (cloned by fetch.py at the pinned
+  # revision). Versions match that repo's requirements.txt where a pin
+  # exists there (nltk, rouge, bert-score); numpy/regex are given
+  # compatible modern ranges since the original conda pins predate Python
+  # 3.11 wheels.
+  "numpy>=1.26,<2",
+  "regex>=2023.10.3",
+  "nltk==3.8.1",
+  "rouge==1.0.1",
+  "bert-score==0.3.13",
+  # Judge scoring (score.py --mode judge|both): OpenAI API client used to
+  # call the pinned judge model from benchmark.toml [judge].model.
+  "openai>=1.40,<2",
+]
+
+[tool.uv]
+package = false
