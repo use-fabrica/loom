@@ -1,0 +1,3 @@
+# The Engine's contract stops at Retrieve; it never generates answers
+
+Loom's public contract is Ingest + Retrieve. The answering LLM call is made by the client (or, in benchmarking, by the Harness) using the returned Context Bundle — so a benchmark score movement is attributable to retrieval quality rather than to prompt or model luck in a generation step, and self-hosting clients keep ownership of generation. A convenience answer layer can be added on top later without widening the core contract. Rejected: Ingest + Answer (engine-owned generation), which would bake a hidden confound into every Report.

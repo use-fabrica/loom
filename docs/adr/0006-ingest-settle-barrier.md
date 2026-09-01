@@ -1,0 +1,3 @@
+# Ingest is asynchronous; the contract includes an explicit settle barrier
+
+Consolidation and indexing may run in the background, so the contract exposes a barrier that resolves when everything previously Ingested is queryable via Retrieve. Benchmark Runs await the barrier before asking questions, keeping Reports deterministic; real clients get the same guarantee. The v0 implementation may be synchronous, making the barrier a no-op — the endpoint exists from day one so that going async later is not a breaking API change. Do not "clean up" the no-op. Rejected: synchronous-forever Ingest (blocks background consolidation), and eventual consistency with sleeps (timing noise in every Report).

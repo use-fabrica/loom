@@ -1,0 +1,3 @@
+# The Engine contract is proto-defined and served via ConnectRPC
+
+The Ingest/Retrieve contract is defined in `proto/` and served with ConnectRPC (connect-go): one handler implementation speaks the Connect protocol (plain HTTP/JSON), gRPC, and gRPC-Web, so self-hosters, Python harnesses, and curl users get an HTTP/JSON surface without a separate gateway while proto stays the single source of truth. Rejected: grpc-gateway (a second generated artifact chain to maintain), hand-written net/http JSON (no canonical schema for client generation), and gRPC-only (shuts out most of the agent/harness ecosystem Loom targets).
