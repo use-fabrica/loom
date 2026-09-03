@@ -59,14 +59,31 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
       - run: helm lint deploy/helm/loom
-      - run: >-
-          helm template loom deploy/helm/loom
-          --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8
-          > /dev/null
-      - run: >-
-          helm template loom deploy/helm/loom
-          --set postgres.enabled=false --set postgres.externalUrl=postgres://external
-          --set neo4j.enabled=false --set embedder.local.enabled=true
-          --set secrets.existingSecret=loom-secrets
-          --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8
-          > /dev/null
+      # Default: in-chart Postgres. The DSN the Engine boots with must name
+      # the Service the same chart emits, and the local Embedder must be off.
+      - name: Render default configuration
+        run: |
+          helm template loom deploy/helm/loom \
+            --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8 \
+            > render-default.yaml
+          svc=$(awk '/^kind: Service$/{s=1} s && /^  name: .*-postgres$/{print $2; exit}' render-default.yaml)
+          test -n "$svc"
+          grep -Fx "  CE_DATABASE_URL: \"postgres://loom:loom@${svc}:5432/loom?sslmode=disable\"" render-default.yaml
+          grep -Fx '  CE_EMBEDDER_BASE_URL: "https://api.openai.com/v1"' render-default.yaml
+          grep -c '^kind: StatefulSet$' render-default.yaml | grep -Fx 2
+      # External Postgres, caller-owned Secret, no Neo4j, in-chart Embedder:
+      # no chart Secret, the caller's Secret referenced, Loom pointed at TEI.
+      - name: Render external configuration
+        run: |
+          helm template loom deploy/helm/loom \
+            --set postgres.enabled=false --set postgres.externalUrl=postgres://external \
+            --set neo4j.enabled=false --set embedder.local.enabled=true \
+            --set secrets.existingSecret=loom-secrets \
+            --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8 \
+            > render-external.yaml
+          ! grep -q '^kind: Secret$' render-external.yaml
+          ! grep -q '^kind: StatefulSet$' render-external.yaml
+          grep -Fx '                name: loom-secrets' render-external.yaml
+          tei=$(awk '/^kind: Service$/{s=1} s && /^  name: .*-tei$/{print $2; exit}' render-external.yaml)
+          test -n "$tei"
+          grep -Fx "  CE_EMBEDDER_BASE_URL: \"http://${tei}:80/v1\"" render-external.yaml
