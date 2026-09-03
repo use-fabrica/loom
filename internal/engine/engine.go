@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
 	"github.com/use-fabrica/loom/internal/embed"
@@ -63,6 +64,15 @@ type Engine struct {
 	log   *zap.Logger
 	opts  Options
 
+	// jobsTotal and jobDuration are the loom_jobs_total{kind,outcome}
+	// counter and loom_job_duration_seconds{kind} histogram (spec story
+	// 23), registered on the Registerer New is given. consolidateWorker
+	// and reindexWorker both observe them through Engine.observeJob
+	// (internal/engine/workers.go), so the outcome classification lives
+	// in exactly one place.
+	jobsTotal   *prometheus.CounterVec
+	jobDuration *prometheus.HistogramVec
+
 	// reindexRequired is set when Start observes store.ErrEmbedderMismatch
 	// and cleared once Reindex has (re)started one. While set, Retrieve
 	// refuses queries so a Passage embedded by a prior Embedder is never
@@ -75,16 +85,28 @@ type Engine struct {
 var _ Service = (*Engine)(nil)
 
 // New constructs an Engine over st, using emb to embed queries and Segment
-// content, seg to derive Segments from a Session's Turns, and log for
-// diagnostics. Call Start before serving traffic.
-func New(st store.Store, emb embed.Embedder, seg Segmenter, log *zap.Logger, opts Options) *Engine {
-	return &Engine{
+// content, seg to derive Segments from a Session's Turns, log for
+// diagnostics, and reg to register the Engine's job metrics
+// (loom_jobs_total, loom_job_duration_seconds — spec story 23). Call
+// Start before serving traffic.
+func New(st store.Store, emb embed.Embedder, seg Segmenter, log *zap.Logger, reg prometheus.Registerer, opts Options) *Engine {
+	e := &Engine{
 		store: st,
 		emb:   emb,
 		seg:   seg,
 		log:   log,
 		opts:  opts,
+		jobsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "loom_jobs_total",
+			Help: "Total background jobs completed, by kind and outcome.",
+		}, []string{"kind", "outcome"}),
+		jobDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "loom_job_duration_seconds",
+			Help: "Background job duration in seconds, by kind.",
+		}, []string{"kind"}),
 	}
+	reg.MustRegister(e.jobsTotal, e.jobDuration)
+	return e
 }
 
 // Start records the configured Embedder as the one the store is indexed

@@ -57,17 +57,22 @@ docker compose -f deploy/compose/docker-compose.yaml up
 curl http://localhost:8080/healthz
 ```
 
-This brings up `loom`, `postgres` (the v0 store — pgvector + tsvector + River,
-ADR-0007), and `neo4j` (the graph layer, present per ADR-0009 but not yet
-queried by v0). To run without a hosted embeddings API key, add the bundled
-Embedder:
+This brings up `loom` and `postgres` (the v0 store — pgvector + tsvector +
+River, ADR-0007; requires pgvector >= 0.8.0, which the bundled image is
+pinned to) — the only stateful service baseline retrieval needs (story 12).
+Two optional profiles add more:
 
 ```bash
+# Bundled Embedder, so you don't need a hosted API key
 docker compose -f deploy/compose/docker-compose.yaml --profile local-embedder up
+
+# Neo4j, the graph layer shipped per ADR-0009 but not yet queried by v0
+docker compose -f deploy/compose/docker-compose.yaml --profile graph up
 ```
 
-and set `CE_EMBEDDER_BASE_URL=http://tei:80/v1` in your `.env` (see
-`deploy/compose/.env.example` for the full list of variables).
+Profiles combine (`--profile local-embedder --profile graph`). For the
+local Embedder, also set `CE_EMBEDDER_BASE_URL=http://tei:80/v1` in your
+`.env` (see `deploy/compose/.env.example` for the full list of variables).
 
 ## Quickstart (Helm)
 
@@ -94,7 +99,7 @@ Every variable uses the existing `CE_` prefix (`internal/config`):
 |---|---|---|
 | `CE_HTTP_ADDR` | `:8080` | Address the Engine's HTTP server listens on. Health at `/healthz`, metrics at `/metrics`. |
 | `CE_ENV` | `development` | Deployment environment label. |
-| `CE_DATABASE_URL` | required | Postgres DSN (ADR-0007). |
+| `CE_DATABASE_URL` | required | Postgres DSN (ADR-0007). Requires the `vector` extension >= 0.8.0; the bundled `postgres` image is already pinned to a compatible release. |
 | `CE_EMBEDDER_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible embeddings endpoint. |
 | `CE_EMBEDDER_API_KEY` | empty | Bearer token for `CE_EMBEDDER_BASE_URL`; header omitted when empty. |
 | `CE_EMBEDDER_MODEL` | required | Embedding model name. |

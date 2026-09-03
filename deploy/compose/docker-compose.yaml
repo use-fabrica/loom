@@ -7,6 +7,10 @@
 # Add the bundled Embedder instead of a hosted API with:
 #
 #   docker compose -f deploy/compose/docker-compose.yaml --profile local-embedder up
+#
+# Add the Neo4j graph layer (ADR-0009; not yet queried by v0) with:
+#
+#   docker compose -f deploy/compose/docker-compose.yaml --profile graph up
 
 services:
   loom:
@@ -31,9 +35,11 @@ services:
         condition: service_healthy
 
   # v0's storage port (ADR-0007): pgvector for ANN, tsvector for lexical,
-  # River for durable job state — all on one Postgres.
+  # River for durable job state — all on one Postgres. Pinned to a
+  # specific pgvector release (not just `pg17`) so Store.Open's version
+  # check (ADR-0007: pgvector >= 0.8.0) always sees a version it accepts.
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:0.8.6-pg17
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-loom}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-loom}
@@ -47,9 +53,14 @@ services:
       retries: 10
 
   # Graph layer, present per ADR-0009: shipped from v0, not queried by the
-  # Engine until graph retrieval lands on top of the baseline.
+  # Engine until graph retrieval lands on top of the baseline. Optional in
+  # compose — story 12 wants only one stateful service (Postgres) for
+  # baseline retrieval — behind a profile, exactly like `tei` below; the
+  # Helm chart still installs it by default (ADR-0009's decision, left as
+  # is here).
   neo4j:
     image: neo4j:5-community
+    profiles: ["graph"]
     environment:
       NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/changeme}
     volumes:

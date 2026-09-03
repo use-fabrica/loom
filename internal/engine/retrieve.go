@@ -38,6 +38,12 @@ func (e *Engine) Retrieve(ctx context.Context, namespace, query string, limit in
 	if err != nil {
 		return nil, fmt.Errorf("engine: retrieve: embed query: %w", err)
 	}
+	if len(vectors) != 1 {
+		return nil, fmt.Errorf("engine: retrieve: embedder returned %d vectors for %d inputs", len(vectors), 1)
+	}
+	if dims := e.emb.Dimensions(); len(vectors[0]) != dims {
+		return nil, fmt.Errorf("engine: retrieve: embedder returned a %d-dimension vector, want %d", len(vectors[0]), dims)
+	}
 
 	var vectorHits, lexicalHits []store.Candidate
 	group, gctx := errgroup.WithContext(ctx)

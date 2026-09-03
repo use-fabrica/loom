@@ -78,13 +78,9 @@ func cmdList(args []string) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "NAME\tKIND\tJUDGE\tANSWERER"); err != nil {
-		return err
-	}
+	fmt.Fprintln(tw, "NAME\tKIND\tJUDGE\tANSWERER")
 	for _, m := range manifests {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", m.Name, m.Kind, judgeColumn(m), answererColumn(m)); err != nil {
-			return err
-		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", m.Name, m.Kind, judgeColumn(m), answererColumn(m))
 	}
 	return tw.Flush()
 }
@@ -298,5 +294,6 @@ func cmdBaselineCompare(args []string) error {
 	if err != nil {
 		return err
 	}
-	return bench.WriteTable(os.Stdout, bench.Compare(baseline, current))
+	bench.WriteTable(os.Stdout, bench.Compare(baseline, current))
+	return nil
 }

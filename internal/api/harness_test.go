@@ -61,7 +61,8 @@ type engineServer struct {
 func newEngineServer(t *testing.T, ctx context.Context, st *postgres.Store, log *zap.Logger, emb embed.Embedder) *engineServer {
 	t.Helper()
 
-	eng := engine.New(st, emb, engine.TurnSegmenter{}, log, engine.Options{
+	reg := prometheus.NewRegistry()
+	eng := engine.New(st, emb, engine.TurnSegmenter{}, log, reg, engine.Options{
 		PollInterval: 10 * time.Millisecond,
 	})
 	if err := eng.Start(ctx); err != nil {
@@ -79,7 +80,7 @@ func newEngineServer(t *testing.T, ctx context.Context, st *postgres.Store, log 
 		t.Fatalf("runner.Start: %v", err)
 	}
 
-	mux := api.NewMux(eng, log, prometheus.NewRegistry())
+	mux := api.NewMux(eng, log, reg)
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)

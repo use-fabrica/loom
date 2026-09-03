@@ -100,8 +100,12 @@ func Main(m *testing.M) {
 	os.Exit(code)
 }
 
-// adminDSN resolves the admin DSN New uses, skipping t if none is
-// available.
+// adminDSN resolves the admin DSN New uses. With neither
+// CE_TEST_DATABASE_URL set nor a usable initdb/pg_ctl on PATH, it skips t
+// under `go test -short` (a deliberately reduced run) and otherwise fails
+// t outright: the contract seam is supposed to run against a real
+// Postgres (Testing Decisions), so a silent skip in a normal run would
+// let `go test ./...` pass having asserted nothing.
 func adminDSN(t testing.TB) string {
 	t.Helper()
 
@@ -111,7 +115,11 @@ func adminDSN(t testing.TB) string {
 
 	dsn, err := ensureCluster()
 	if err != nil {
-		t.Skipf("testpg: no local Postgres available: set %s to an admin DSN, or put initdb and pg_ctl on PATH for a temporary cluster (%v)", adminDatabaseURLEnv, err)
+		msg := fmt.Sprintf("testpg: no local Postgres available: set %s to an admin DSN, or put initdb and pg_ctl on PATH for a temporary cluster (e.g. `nix develop`) (%v)", adminDatabaseURLEnv, err)
+		if testing.Short() {
+			t.Skip(msg)
+		}
+		t.Fatal(msg)
 	}
 	return dsn
 }

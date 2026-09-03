@@ -185,6 +185,14 @@ func (s *Store) Ingest(ctx context.Context, namespace string, sessions []domain.
 	return domain.Cursor(cursor), nil
 }
 
+// embedderLockKey is a pg_advisory_xact_lock key serializing concurrent
+// EnsureEmbedder calls — distinct from migrate.go's schemaLockKey (that
+// one guards schema DDL; this one guards the first-write race below).
+// `SELECT ... FOR UPDATE` locks nothing when the row is absent, so
+// without this, two replicas starting on a fresh store can both take the
+// no-rows branch and race two plain INSERTs on the same primary key.
+const embedderLockKey int64 = 472_819_004
+
 // EnsureEmbedder implements store.Store.
 func (s *Store) EnsureEmbedder(ctx context.Context, emb store.Embedder) error {
 	if emb.Dimensions <= 0 {
@@ -196,6 +204,10 @@ func (s *Store) EnsureEmbedder(ctx context.Context, emb store.Embedder) error {
 		return fmt.Errorf("ensure embedder: begin: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op once Commit succeeds
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, embedderLockKey); err != nil {
+		return fmt.Errorf("ensure embedder: acquire lock: %w", err)
+	}
 
 	var existingID string
 	var existingDims int
@@ -574,11 +586,6 @@ func (s *Store) SearchLexical(ctx context.Context, namespace, query string, k in
 	return candidates, nil
 }
 
-// discardedJobKinds are the job kinds Barrier inspects when it finds a Turn
-// not yet queryable: the only two kinds that ever gate a Namespace's settle
-// barrier (store.ConsolidateArgs, store.ReindexArgs).
-var discardedJobKinds = []string{store.ConsolidateArgs{}.Kind(), store.ReindexArgs{}.Kind()}
-
 // Barrier implements store.Store.
 func (s *Store) Barrier(ctx context.Context, namespace string, cursor domain.Cursor) (store.BarrierState, error) {
 	var pending bool
@@ -595,28 +602,27 @@ func (s *Store) Barrier(ctx context.Context, namespace string, cursor domain.Cur
 	// Something at or below cursor isn't queryable yet. That's expected
 	// while consolidation is still running; it's only BarrierFailed if the
 	// job responsible has been discarded after exhausting its retries.
-	result, err := s.insertClient.JobList(ctx, river.NewJobListParams().
-		States(rivertype.JobStateDiscarded).
-		Kinds(discardedJobKinds...).
-		First(100))
-	if err != nil {
-		return store.BarrierPending, fmt.Errorf("barrier: list discarded jobs: %w", err)
+	// Queried directly against River's river_job table rather than
+	// insertClient.JobList: JobList(First(100)) returns only the 100
+	// oldest discarded jobs (River sorts by id ascending), so a newly
+	// discarded job for this Namespace falls outside that window once more
+	// than 100 have accumulated, and Barrier would report Pending forever.
+	// A discarded reindex fails every Namespace (it carries no
+	// per-Namespace metadata to match against); a discarded consolidate
+	// fails only the Namespace in its own metadata.
+	var failed bool
+	if err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM river_job
+			WHERE state = 'discarded'
+			AND (kind = $1 OR (kind = $2 AND metadata->>'namespace' = $3))
+		)`,
+		store.ReindexArgs{}.Kind(), store.ConsolidateArgs{}.Kind(), namespace,
+	).Scan(&failed); err != nil {
+		return store.BarrierPending, fmt.Errorf("barrier: check discarded jobs: %w", err)
 	}
-
-	reindexKind := store.ReindexArgs{}.Kind()
-	for _, job := range result.Jobs {
-		// A discarded reindex spans every Namespace, not just this one, and
-		// carries no per-Namespace metadata to match against.
-		if job.Kind == reindexKind {
-			return store.BarrierFailed, nil
-		}
-		var meta consolidateMetadata
-		if err := json.Unmarshal(job.Metadata, &meta); err != nil {
-			continue
-		}
-		if meta.Namespace == namespace {
-			return store.BarrierFailed, nil
-		}
+	if failed {
+		return store.BarrierFailed, nil
 	}
 	return store.BarrierPending, nil
 }

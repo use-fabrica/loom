@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 
 	"go.uber.org/fx"
@@ -29,9 +31,13 @@ func newHTTPServer(lc fx.Lifecycle, cfg *config.Config, mux *http.ServeMux, log 
 
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
+			ln, err := net.Listen("tcp", srv.Addr)
+			if err != nil {
+				return fmt.Errorf("http server: listen on %s: %w", srv.Addr, err)
+			}
 			log.Info("http server listening", zap.String("addr", srv.Addr))
 			go func() {
-				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					log.Error("http server stopped unexpectedly", zap.Error(err))
 				}
 			}()

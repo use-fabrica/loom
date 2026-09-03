@@ -43,11 +43,14 @@ secrets:
   CE_EMBEDDER_API_KEY: ""
   existingSecret: ""
 
-# ADR-0007: Postgres is the v0 store (pgvector + tsvector + River).
+# ADR-0007: Postgres is the v0 store (pgvector + tsvector + River). image is
+# pinned to a specific pgvector release (not just `pg17`) so Store.Open's
+# version check (ADR-0007: pgvector >= 0.8.0) always sees a version it
+# accepts.
 postgres:
   enabled: true
   externalUrl: "" # used when enabled: false
-  image: pgvector/pgvector:pg17
+  image: pgvector/pgvector:0.8.6-pg17
   storage: 10Gi
   storageClassName: ""
   auth:

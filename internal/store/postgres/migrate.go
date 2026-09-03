@@ -117,6 +117,10 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 	}
 
+	if err := checkPgvectorVersion(ctx, pool); err != nil {
+		return err
+	}
+
 	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
 	if err != nil {
 		return fmt.Errorf("create river migrator: %w", err)
@@ -126,6 +130,59 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	return nil
+}
+
+// minPgvectorMajor and minPgvectorMinor are the ADR-0007 floor: "pgvector
+// (pinned >= 0.8.0, iterative scans enabled)". SearchVector sets
+// hnsw.iterative_scan on every call; older pgvector doesn't recognize
+// that setting and fails with an opaque internal error, so this is
+// checked once at startup instead.
+const (
+	minPgvectorMajor = 0
+	minPgvectorMinor = 8
+)
+
+// checkPgvectorVersion fails with a clear error when the vector extension
+// is older than ADR-0007 requires. Runs every Open (not gated on whether
+// runMigrations actually applied anything this time), on the same
+// bootstrap pool the versioned migrations just ran on: CREATE EXTENSION
+// IF NOT EXISTS vector, applied by 0001_init.sql above, guarantees
+// pg_extension has a row by the time this runs, whether that migration
+// ran just now or on a prior startup.
+func checkPgvectorVersion(ctx context.Context, pool *pgxpool.Pool) error {
+	var version string
+	if err := pool.QueryRow(ctx, `SELECT extversion FROM pg_extension WHERE extname = 'vector'`).Scan(&version); err != nil {
+		return fmt.Errorf("read pgvector version: %w", err)
+	}
+
+	major, minor, err := parseMajorMinor(version)
+	if err != nil {
+		return fmt.Errorf("parse pgvector version %q: %w", version, err)
+	}
+	if major < minPgvectorMajor || (major == minPgvectorMajor && minor < minPgvectorMinor) {
+		return fmt.Errorf("postgres: pgvector %s found; >= 0.8.0 required (ADR-0007)", version)
+	}
+	return nil
+}
+
+// parseMajorMinor parses the leading "major.minor" of a dotted extension
+// version string (for example "0.8.1" -> 0, 8), ignoring any further
+// component: pgvector's own version scheme is numeric dotted releases
+// only, never a suffix like "-beta".
+func parseMajorMinor(version string) (major, minor int, err error) {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("expected major.minor, got %q", version)
+	}
+	major, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("major: %w", err)
+	}
+	minor, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("minor: %w", err)
+	}
+	return major, minor, nil
 }
 
 // withSchemaLock runs fn inside a transaction holding the schema advisory

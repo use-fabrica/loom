@@ -5,6 +5,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 
@@ -27,6 +28,10 @@ func Load() (*Config, error) {
 	if dbURL == "" {
 		return nil, errors.New("config: CE_DATABASE_URL is required")
 	}
+	dimensions, err := getEnvInt("CE_EMBEDDER_DIMENSIONS", 0)
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
 		HTTPAddr:    getEnv("CE_HTTP_ADDR", ":8080"),
 		Environment: getEnv("CE_ENV", "development"),
@@ -35,7 +40,7 @@ func Load() (*Config, error) {
 		EmbedderBaseURL:    getEnv("CE_EMBEDDER_BASE_URL", "https://api.openai.com/v1"),
 		EmbedderAPIKey:     getEnv("CE_EMBEDDER_API_KEY", ""),
 		EmbedderModel:      getEnv("CE_EMBEDDER_MODEL", ""),
-		EmbedderDimensions: getEnvInt("CE_EMBEDDER_DIMENSIONS", 0),
+		EmbedderDimensions: dimensions,
 	}, nil
 }
 
@@ -46,13 +51,16 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func getEnvInt(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			return i
-		}
+func getEnvInt(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
 	}
-	return fallback
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("config: %s must be an integer: %s", key, v)
+	}
+	return i, nil
 }
 
 var Module = fx.Module("config", fx.Provide(Load))

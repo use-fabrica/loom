@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -16,9 +17,12 @@ import (
 // newEngine is the fx constructor for *Engine: TurnSegmenter is the v0
 // baseline Segmenter (ADR-0008 — segmentation strategy is a per-Run
 // variable, not a contract change, and one Passage per Turn is the
-// baseline to beat), and the zero Options is valid on its own.
-func newEngine(st store.Store, emb embed.Embedder, log *zap.Logger) *Engine {
-	return New(st, emb, TurnSegmenter{}, log, Options{})
+// baseline to beat), and the zero Options is valid on its own. reg is the
+// process-wide Prometheus registry api.Module provides (NewRegistry): the
+// Engine's job metrics share it with the RPC metrics NewMux's interceptor
+// registers, so both are served from the one /metrics endpoint.
+func newEngine(st store.Store, emb embed.Embedder, log *zap.Logger, reg *prometheus.Registry) *Engine {
+	return New(st, emb, TurnSegmenter{}, log, reg, Options{})
 }
 
 // Module provides the Engine and wires its lifecycle: EnsureEmbedder runs
