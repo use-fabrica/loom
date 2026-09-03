@@ -43,9 +43,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v6
+      # v2 line, matching the devshell's golangci-lint; the action's
+      # "latest" resolves to a v1 build too old for this Go toolchain.
+      - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v2.13.1
           args: >-
             ./cmd/server/... ./internal/api/... ./internal/domain/...
             ./internal/embed/... ./internal/engine/... ./internal/store/...
