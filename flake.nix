@@ -34,6 +34,9 @@
             protoc-gen-connect-go
             protoc-gen-go-grpc
 
+            # Contract-seam tests run against a real local Postgres cluster
+            (postgresql_17.withPackages (p: [ p.pgvector ]))
+
             nodejs_24
             corepack_24
 
