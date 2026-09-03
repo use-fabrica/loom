@@ -1,4 +1,8 @@
 # Non-secret CE_* environment for the loom Deployment (values.yaml: config).
+# When the in-chart Embedder (embedder.local) is enabled, CE_EMBEDDER_BASE_URL
+# follows it automatically unless the operator sets a different URL
+# explicitly; the Engine should never silently keep talking to a hosted API
+# while a local Embedder sits idle beside it.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,5 +11,9 @@ metadata:
     {{- include "loom.labels" . | nindent 4 }}
 data:
   {{- range $key, $value := .Values.config }}
+  {{- if and (eq $key "CE_EMBEDDER_BASE_URL") $.Values.embedder.local.enabled (eq $value "https://api.openai.com/v1") }}
+  {{ $key }}: {{ printf "http://%s-tei:80/v1" (include "loom.fullname" $) | quote }}
+  {{- else }}
   {{ $key }}: {{ $value | quote }}
+  {{- end }}
   {{- end }}

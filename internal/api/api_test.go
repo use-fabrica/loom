@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/use-fabrica/loom/gen/loom/v1/loomv1connect"
 	"github.com/use-fabrica/loom/internal/embed"
 	"github.com/use-fabrica/loom/internal/engine"
+	"github.com/use-fabrica/loom/internal/store/postgres"
 )
 
 // baseTime anchors every Turn's event_time to a fixed instant instead of
@@ -642,5 +644,144 @@ func TestConnectJSON(t *testing.T) {
 	}
 	if decoded.Bundle.Passages[0].SessionId != "sess" {
 		t.Errorf("passage sessionId = %q, want %q", decoded.Bundle.Passages[0].SessionId, "sess")
+	}
+}
+
+// TestSettleReportsPermanentFailure proves the settle barrier surfaces a
+// permanently failed consolidate job as connect.CodeAborted — never
+// DeadlineExceeded, so a caller can tell "this will never settle" apart
+// from "hasn't settled yet" — and that fixing the underlying problem and
+// running a Reindex clears the discarded job's failure record instead of
+// letting it poison every later Settle in the same Namespace.
+func TestSettleReportsPermanentFailure(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	h := newHarnessWithRunnerOptions(t, ctx, postgres.RunnerOptions{
+		FetchPollInterval: 20 * time.Millisecond,
+		RetryPolicy:       constantRetryPolicy{delay: 100 * time.Millisecond},
+		MaxAttempts:       1, // fail once, discard immediately: no retry delay to wait out
+	})
+
+	const namespace = "permanent-failure"
+	h.fake.Fail(errors.New("embedder down"))
+
+	cursor := ingest(ctx, t, h, namespace, &loomv1.Session{
+		Id: "sess",
+		Turns: []*loomv1.Turn{
+			{Id: "t-1", Speaker: "user", Content: "this will never consolidate", EventTime: timestamppb.New(baseTime)},
+		},
+	})
+
+	settleCtx, settleCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer settleCancel()
+	err := settle(settleCtx, t, h, namespace, cursor)
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Settle with a permanently failing Embedder: got DeadlineExceeded, want a definitive Aborted well inside the 10s bound: %v", err)
+	}
+	if connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("Settle with a permanently failing Embedder: code = %v, want Aborted (err=%v)", connect.CodeOf(err), err)
+	}
+
+	// Fix the Embedder and Reindex: BeginReindex must clear the discarded
+	// consolidate job's failure record, and the Reindex re-derives the
+	// Passage the failed consolidate never produced.
+	h.fake.Fail(nil)
+	reindexResp, err := h.client.Reindex(ctx, connect.NewRequest(&loomv1.ReindexRequest{}))
+	if err != nil {
+		t.Fatalf("Reindex: %v", err)
+	}
+	mustSettle(ctx, t, h, namespace, reindexResp.Msg.GetCursor())
+
+	bundle := retrieve(ctx, t, h, namespace, "consolidate", 10)
+	if len(bundle.GetPassages()) != 1 {
+		t.Fatalf("Retrieve after Reindex: got %d passages, want 1", len(bundle.GetPassages()))
+	}
+
+	// A further Ingest+Settle in the same Namespace must succeed: the
+	// discarded consolidate job from before the Reindex must not keep
+	// failing every later Settle here.
+	cursor2 := ingest(ctx, t, h, namespace, &loomv1.Session{
+		Id: "sess-2",
+		Turns: []*loomv1.Turn{
+			{Id: "t-1", Speaker: "user", Content: "this consolidates fine now", EventTime: timestamppb.New(baseTime)},
+		},
+	})
+	mustSettle(ctx, t, h, namespace, cursor2)
+}
+
+// TestGRPCProtocol verifies ADR-0005's one-handler-three-protocols claim:
+// the same Connect handler serves a generated client speaking real gRPC
+// over cleartext HTTP/2 (h2c, via net/http's stdlib Protocols support —
+// no golang.org/x/net dependency), and also answers a gRPC-Web client
+// over plain HTTP/1.1.
+func TestGRPCProtocol(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	h := newHarness(t, ctx)
+
+	const namespace = "grpc-protocol"
+
+	p := new(http.Protocols)
+	p.SetUnencryptedHTTP2(true)
+	grpcClient := loomv1connect.NewLoomServiceClient(
+		&http.Client{Transport: &http.Transport{Protocols: p}},
+		h.srv.URL,
+		connect.WithGRPC(),
+	)
+
+	ingestResp, err := grpcClient.Ingest(ctx, connect.NewRequest(&loomv1.IngestRequest{
+		Namespace: namespace,
+		Sessions: []*loomv1.Session{{
+			Id: "sess",
+			Turns: []*loomv1.Turn{
+				{Id: "t-1", Speaker: "user", Content: "served over real grpc", EventTime: timestamppb.New(baseTime)},
+			},
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("gRPC Ingest: %v", err)
+	}
+	cursor := ingestResp.Msg.GetCursor()
+
+	if _, err := grpcClient.Settle(ctx, connect.NewRequest(&loomv1.SettleRequest{Namespace: namespace, Cursor: cursor})); err != nil {
+		t.Fatalf("gRPC Settle: %v", err)
+	}
+
+	retrieveResp, err := grpcClient.Retrieve(ctx, connect.NewRequest(&loomv1.RetrieveRequest{
+		Namespace: namespace,
+		Query:     "real grpc",
+		Limit:     10,
+	}))
+	if err != nil {
+		t.Fatalf("gRPC Retrieve: %v", err)
+	}
+	passages := retrieveResp.Msg.GetBundle().GetPassages()
+	if len(passages) != 1 {
+		t.Fatalf("gRPC Retrieve: got %d passages, want 1", len(passages))
+	}
+	passage := passages[0]
+	if passage.GetSessionId() != "sess" {
+		t.Errorf("gRPC Retrieve: passage session id = %q, want %q", passage.GetSessionId(), "sess")
+	}
+	if len(passage.GetTurns()) != 1 || passage.GetTurns()[0].GetId() != "t-1" {
+		t.Errorf("gRPC Retrieve: passage turns = %v, want one provenance turn t-1", passage.GetTurns())
+	}
+
+	// gRPC-Web travels over plain HTTP/1.1 (srv.Client(), no h2c
+	// transport) and must be answered by the same handler.
+	webClient := loomv1connect.NewLoomServiceClient(h.srv.Client(), h.srv.URL, connect.WithGRPCWeb())
+	webResp, err := webClient.Retrieve(ctx, connect.NewRequest(&loomv1.RetrieveRequest{
+		Namespace: namespace,
+		Query:     "real grpc",
+		Limit:     10,
+	}))
+	if err != nil {
+		t.Fatalf("gRPC-Web Retrieve: %v", err)
+	}
+	webPassages := webResp.Msg.GetBundle().GetPassages()
+	if len(webPassages) != 1 || webPassages[0].GetId() != passage.GetId() {
+		t.Errorf("gRPC-Web Retrieve returned %v, want the same Passage %q", webPassages, passage.GetId())
 	}
 }

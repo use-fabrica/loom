@@ -20,6 +20,7 @@ type Fake struct {
 	overrides map[string][]float32
 	calls     int
 	block     <-chan struct{}
+	fail      error
 }
 
 // NewFake returns a Fake Embedder identified by id, producing dims-length
@@ -69,12 +70,27 @@ func (f *Fake) Block(ch <-chan struct{}) {
 	f.block = ch
 }
 
+// Fail makes subsequent Embed calls return err instead of a vector,
+// simulating a permanently unhealthy provider for tests that need the
+// settle barrier to observe a discarded job. A nil err clears it, letting
+// Embed resume producing vectors.
+func (f *Fake) Fail(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fail = err
+}
+
 // Embed implements embed.Embedder.
 func (f *Fake) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	f.mu.Lock()
 	f.calls++
 	block := f.block
+	fail := f.fail
 	f.mu.Unlock()
+
+	if fail != nil {
+		return nil, fail
+	}
 
 	if block != nil {
 		select {

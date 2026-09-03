@@ -295,6 +295,17 @@ func (s *Store) BeginReindex(ctx context.Context, emb store.Embedder) (domain.Cu
 		return 0, fmt.Errorf("begin reindex: record state: %w", err)
 	}
 
+	// A Reindex re-derives every Passage from every Turn (TRUNCATE above,
+	// then the reindex job below re-embeds them all), which subsumes
+	// whatever any previously discarded consolidate or reindex job failed
+	// to produce. Their failure record is now obsolete: left in river_job
+	// it would keep tripping Barrier's discarded-job check for the whole
+	// rebuilt range even after this Reindex succeeds, so it is cleared
+	// here rather than left for Barrier to reason its way around.
+	if _, err := tx.Exec(ctx, `DELETE FROM river_job WHERE state = 'discarded' AND kind IN ('consolidate', 'reindex')`); err != nil {
+		return 0, fmt.Errorf("begin reindex: clear discarded jobs: %w", err)
+	}
+
 	args := store.ReindexArgs{EmbedderID: emb.ID, Dimensions: emb.Dimensions}
 	if _, err := s.insertClient.InsertTx(ctx, tx, args, &river.InsertOpts{
 		UniqueOpts: river.UniqueOpts{ByArgs: false, ByState: reindexUniqueStates},
@@ -600,24 +611,54 @@ func (s *Store) Barrier(ctx context.Context, namespace string, cursor domain.Cur
 	}
 
 	// Something at or below cursor isn't queryable yet. That's expected
-	// while consolidation is still running; it's only BarrierFailed if the
-	// job responsible has been discarded after exhausting its retries.
-	// Queried directly against River's river_job table rather than
-	// insertClient.JobList: JobList(First(100)) returns only the 100
-	// oldest discarded jobs (River sorts by id ascending), so a newly
-	// discarded job for this Namespace falls outside that window once more
-	// than 100 have accumulated, and Barrier would report Pending forever.
-	// A discarded reindex fails every Namespace (it carries no
-	// per-Namespace metadata to match against); a discarded consolidate
-	// fails only the Namespace in its own metadata.
+	// while consolidation is still running; it's only BarrierFailed if a
+	// discarded job still covers unindexed work at or below cursor.
+	// River retains discarded jobs indefinitely, and this queries
+	// river_job directly rather than through insertClient.JobList:
+	// JobList(First(100)) only returns the 100 oldest discarded jobs
+	// (River sorts by id ascending), so a job discarded after 100 have
+	// accumulated would fall outside that window and Barrier would
+	// report Pending forever. Scoping each discarded job to whether it
+	// still covers unindexed work — rather than counting any discarded
+	// job at all — is what keeps a job that failed once from poisoning
+	// every later Settle after the work it was responsible for has
+	// actually been redone:
+	//   - a discarded consolidate only counts while its own
+	//     [from_seq, to_seq] Session range still has an unindexed Turn
+	//     at or below cursor. A retried attempt, a later redelivery of
+	//     the same Turns, or a Reindex all clear indexed_at through
+	//     WritePassages, which scopes the discarded row back out even
+	//     though the river_job row itself is still there.
+	//   - a discarded reindex only counts while it is the most recent
+	//     reindex job. Once a later reindex job exists in any
+	//     non-discarded state, that Reindex has already re-derived
+	//     everything the discarded one failed to produce — BeginReindex
+	//     also deletes discarded rows outright, but Barrier does not
+	//     lean on that: this ordering check is what keeps a
+	//     concurrently-committing BeginReindex from leaving a window
+	//     where the stale discarded row still poisons every Namespace.
 	var failed bool
 	if err := s.pool.QueryRow(ctx,
-		`SELECT EXISTS (
-			SELECT 1 FROM river_job
-			WHERE state = 'discarded'
-			AND (kind = $1 OR (kind = $2 AND metadata->>'namespace' = $3))
-		)`,
-		store.ReindexArgs{}.Kind(), store.ConsolidateArgs{}.Kind(), namespace,
+		`SELECT
+			EXISTS (
+				SELECT 1 FROM river_job j
+				WHERE j.state = 'discarded' AND j.kind = 'consolidate' AND j.args->>'namespace' = $1
+				AND EXISTS (
+					SELECT 1 FROM turns t
+					WHERE t.namespace = $1 AND t.session_id = j.args->>'session_id'
+					AND t.seq BETWEEN (j.args->>'from_seq')::bigint AND (j.args->>'to_seq')::bigint
+					AND t.seq <= $2 AND t.indexed_at IS NULL
+				)
+			)
+			OR EXISTS (
+				SELECT 1 FROM river_job j
+				WHERE j.state = 'discarded' AND j.kind = 'reindex'
+				AND NOT EXISTS (
+					SELECT 1 FROM river_job n
+					WHERE n.kind = 'reindex' AND n.id > j.id AND n.state <> 'discarded'
+				)
+			)`,
+		namespace, int64(cursor),
 	).Scan(&failed); err != nil {
 		return store.BarrierPending, fmt.Errorf("barrier: check discarded jobs: %w", err)
 	}

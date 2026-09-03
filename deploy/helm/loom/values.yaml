@@ -81,8 +81,8 @@ neo4j:
       memory: 2Gi
 
 # Optional in-cluster Embedder so a cluster can run without a hosted API key.
-# When enabling, also point config.CE_EMBEDDER_BASE_URL at it (see
-# NOTES.txt), matching the compose profile's documented override.
+# When enabled, CE_EMBEDDER_BASE_URL is pointed at it automatically unless
+# config.CE_EMBEDDER_BASE_URL is set to a non-default value.
 embedder:
   local:
     enabled: false

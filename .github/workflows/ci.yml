@@ -52,3 +52,21 @@ jobs:
             ./cmd/server/... ./internal/api/... ./internal/domain/...
             ./internal/embed/... ./internal/engine/... ./internal/store/...
             ./internal/testpg/... ./internal/config/...
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/loom
+      - run: >-
+          helm template loom deploy/helm/loom
+          --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8
+          > /dev/null
+      - run: >-
+          helm template loom deploy/helm/loom
+          --set postgres.enabled=false --set postgres.externalUrl=postgres://external
+          --set neo4j.enabled=false --set embedder.local.enabled=true
+          --set secrets.existingSecret=loom-secrets
+          --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8
+          > /dev/null

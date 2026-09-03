@@ -37,6 +37,9 @@
             # Contract-seam tests run against a real local Postgres cluster
             (postgresql_17.withPackages (p: [ p.pgvector ]))
 
+            # Helm chart validation (helm lint / helm template)
+            kubernetes-helm
+
             nodejs_24
             corepack_24
 

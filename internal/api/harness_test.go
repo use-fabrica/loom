@@ -55,10 +55,29 @@ type engineServer struct {
 	client loomv1connect.LoomServiceClient
 }
 
+// defaultRunnerOptions is the postgres.RunnerOptions every harness-managed
+// Runner uses unless a test overrides one (e.g.
+// TestSettleReportsPermanentFailure's MaxAttempts: 1, so a failing job
+// discards on its very first attempt instead of retrying first).
+func defaultRunnerOptions() postgres.RunnerOptions {
+	return postgres.RunnerOptions{
+		FetchPollInterval: 20 * time.Millisecond,
+		RetryPolicy:       constantRetryPolicy{delay: 100 * time.Millisecond},
+	}
+}
+
 // newEngineServer starts an Engine against st, a River Runner working its
-// Workers, and a Connect server in front of it, and registers cleanup that
-// stops them in reverse of startup order.
+// Workers with defaultRunnerOptions, and a Connect server in front of it,
+// and registers cleanup that stops them in reverse of startup order.
 func newEngineServer(t *testing.T, ctx context.Context, st *postgres.Store, log *zap.Logger, emb embed.Embedder) *engineServer {
+	t.Helper()
+	return newEngineServerWithRunnerOptions(t, ctx, st, log, emb, defaultRunnerOptions())
+}
+
+// newEngineServerWithRunnerOptions is newEngineServer with the Runner's
+// postgres.RunnerOptions overridden, for tests that need to change how the
+// Runner retries or discards jobs.
+func newEngineServerWithRunnerOptions(t *testing.T, ctx context.Context, st *postgres.Store, log *zap.Logger, emb embed.Embedder, runnerOpts postgres.RunnerOptions) *engineServer {
 	t.Helper()
 
 	reg := prometheus.NewRegistry()
@@ -69,10 +88,7 @@ func newEngineServer(t *testing.T, ctx context.Context, st *postgres.Store, log 
 		t.Fatalf("engine.Start: %v", err)
 	}
 
-	runner, err := st.Runner(eng.Workers(), postgres.RunnerOptions{
-		FetchPollInterval: 20 * time.Millisecond,
-		RetryPolicy:       constantRetryPolicy{delay: 100 * time.Millisecond},
-	})
+	runner, err := st.Runner(eng.Workers(), runnerOpts)
 	if err != nil {
 		t.Fatalf("store.Runner: %v", err)
 	}
@@ -128,6 +144,13 @@ type harness struct {
 // server, and registers cleanup in reverse of setup order.
 func newHarness(t *testing.T, ctx context.Context) *harness {
 	t.Helper()
+	return newHarnessWithRunnerOptions(t, ctx, defaultRunnerOptions())
+}
+
+// newHarnessWithRunnerOptions is newHarness with the Runner's
+// postgres.RunnerOptions overridden — see newEngineServerWithRunnerOptions.
+func newHarnessWithRunnerOptions(t *testing.T, ctx context.Context, runnerOpts postgres.RunnerOptions) *harness {
+	t.Helper()
 
 	log := zaptest.NewLogger(t)
 	dsn := testpg.New(t)
@@ -139,7 +162,7 @@ func newHarness(t *testing.T, ctx context.Context) *harness {
 	t.Cleanup(st.Close)
 
 	fake := embed.NewFake("fake", fakeDimensions)
-	es := newEngineServer(t, ctx, st, log, fake)
+	es := newEngineServerWithRunnerOptions(t, ctx, st, log, fake, runnerOpts)
 
 	return &harness{engineServer: es, log: log, store: st, fake: fake}
 }
