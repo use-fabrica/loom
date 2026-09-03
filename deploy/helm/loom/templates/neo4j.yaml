@@ -1,0 +1,72 @@
+{{- /*
+ADR-0009: the graph layer speaks openCypher over Bolt; Neo4j Community is
+the first engine, shipped from v0 even though the Engine doesn't query it
+yet — the schema/queries need a stable target to be written against.
+*/ -}}
+{{- if .Values.neo4j.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "loom.fullname" . }}-neo4j
+  labels:
+    {{- include "loom.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "loom.fullname" . }}-neo4j
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "loom.name" . }}-neo4j
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "loom.name" . }}-neo4j
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: neo4j
+          image: {{ .Values.neo4j.image }}
+          env:
+            - name: NEO4J_AUTH
+              value: {{ .Values.neo4j.auth | quote }}
+          ports:
+            - name: bolt
+              containerPort: 7687
+            - name: http
+              containerPort: 7474
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.neo4j.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.neo4j.storageClassName }}
+        storageClassName: {{ .Values.neo4j.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.neo4j.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "loom.fullname" . }}-neo4j
+  labels:
+    {{- include "loom.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "loom.name" . }}-neo4j
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: bolt
+      port: 7687
+      targetPort: bolt
+    - name: http
+      port: 7474
+      targetPort: http
+{{- end }}

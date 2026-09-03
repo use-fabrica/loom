@@ -1,0 +1,11 @@
+# Non-secret CE_* environment for the loom Deployment (values.yaml: config).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "loom.fullname" . }}
+  labels:
+    {{- include "loom.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

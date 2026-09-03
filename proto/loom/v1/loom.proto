@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package loom.v1;
+
+option go_package = "github.com/use-fabrica/loom/gen/loom/v1;loomv1";
+
+import "google/protobuf/timestamp.proto";
+
+// The Context Engine contract. Stops at Retrieve (ADR-0001).
+service LoomService {
+  rpc Ingest(IngestRequest) returns (IngestResponse);
+  rpc Retrieve(RetrieveRequest) returns (RetrieveResponse);
+  rpc Settle(SettleRequest) returns (SettleResponse);
+  rpc Reindex(ReindexRequest) returns (ReindexResponse);
+}
+
+message Turn {
+  string id = 1;
+  string speaker = 2;
+  string content = 3;
+  google.protobuf.Timestamp event_time = 4;
+}
+
+message Session {
+  string id = 1;
+  repeated Turn turns = 2;
+}
+
+message IngestRequest {
+  string namespace = 1;
+  repeated Session sessions = 2;
+}
+
+message IngestResponse {
+  string cursor = 1;
+}
+
+message RetrieveRequest {
+  string namespace = 1;
+  string query = 2;
+  uint32 limit = 3;
+}
+
+message Passage {
+  string id = 1;
+  string session_id = 2;
+  string content = 3;
+  repeated Turn turns = 4;
+  double score = 5;
+}
+
+message ContextBundle {
+  repeated Passage passages = 1;
+}
+
+message RetrieveResponse {
+  ContextBundle bundle = 1;
+}
+
+message SettleRequest {
+  string namespace = 1;
+  string cursor = 2;
+}
+
+message SettleResponse {}
+
+message ReindexRequest {}
+
+message ReindexResponse {
+  string cursor = 1;
+}

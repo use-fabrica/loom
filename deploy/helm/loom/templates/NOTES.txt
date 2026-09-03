@@ -1,0 +1,30 @@
+Loom {{ .Chart.AppVersion }} has been deployed as "{{ include "loom.fullname" . }}" in namespace {{ .Release.Namespace }}.
+
+Check it's serving:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "loom.fullname" . }} 8080:{{ .Values.service.port }}
+  curl http://localhost:8080/healthz
+
+In-cluster Engine address:
+  http://{{ include "loom.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+{{- if .Values.postgres.enabled }}
+
+Postgres (ADR-0007) is running in-chart as {{ include "loom.fullname" . }}-postgres.
+{{- else }}
+
+Postgres: pointed at {{ .Values.postgres.externalUrl }}.
+{{- end }}
+
+{{- if .Values.neo4j.enabled }}
+
+Neo4j (ADR-0009) is running in-chart as {{ include "loom.fullname" . }}-neo4j.
+It is present but not yet queried by the Engine.
+{{- end }}
+
+{{- if .Values.embedder.local.enabled }}
+
+A local Embedder (text-embeddings-inference) is running as {{ include "loom.fullname" . }}-tei.
+Point it at the Engine by setting, in your values override:
+  config:
+    CE_EMBEDDER_BASE_URL: "http://{{ include "loom.fullname" . }}-tei:80/v1"
+{{- end }}

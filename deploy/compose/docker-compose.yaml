@@ -1,0 +1,70 @@
+# Local/self-hosted Loom stack. Copy .env.example to .env next to this file
+# and edit it before `docker compose up` (compose auto-loads a .env sitting
+# beside the compose file).
+#
+#   docker compose -f deploy/compose/docker-compose.yaml up
+#
+# Add the bundled Embedder instead of a hosted API with:
+#
+#   docker compose -f deploy/compose/docker-compose.yaml --profile local-embedder up
+
+services:
+  loom:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: loom:local
+    ports:
+      - "8080:8080"
+    environment:
+      CE_HTTP_ADDR: ${CE_HTTP_ADDR:-:8080}
+      CE_ENV: ${CE_ENV:-development}
+      # Points at the bundled `postgres` service below (ADR-0007). Override in
+      # .env only if you're running Postgres elsewhere.
+      CE_DATABASE_URL: ${CE_DATABASE_URL:-postgres://loom:loom@postgres:5432/loom?sslmode=disable}
+      CE_EMBEDDER_BASE_URL: ${CE_EMBEDDER_BASE_URL:-https://api.openai.com/v1}
+      CE_EMBEDDER_API_KEY: ${CE_EMBEDDER_API_KEY:-}
+      CE_EMBEDDER_MODEL: ${CE_EMBEDDER_MODEL}
+      CE_EMBEDDER_DIMENSIONS: ${CE_EMBEDDER_DIMENSIONS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # v0's storage port (ADR-0007): pgvector for ANN, tsvector for lexical,
+  # River for durable job state — all on one Postgres.
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-loom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-loom}
+      POSTGRES_DB: ${POSTGRES_DB:-loom}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-loom} -d ${POSTGRES_DB:-loom}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Graph layer, present per ADR-0009: shipped from v0, not queried by the
+  # Engine until graph retrieval lands on top of the baseline.
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/changeme}
+    volumes:
+      - neo4j_data:/data
+
+  # Optional in-cluster Embedder so you don't need a hosted API key to try
+  # Loom locally. Enable with `--profile local-embedder`, then point the
+  # `loom` service at it (see .env.example: CE_EMBEDDER_BASE_URL).
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    profiles: ["local-embedder"]
+    command: ["--model-id", "${TEI_MODEL:-BAAI/bge-small-en-v1.5}"]
+    ports:
+      - "8081:80"
+
+volumes:
+  postgres_data:
+  neo4j_data:
