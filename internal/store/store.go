@@ -8,7 +8,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/use-fabrica/loom/internal/engine"
+	"github.com/use-fabrica/loom/internal/domain"
 )
 
 // ErrEmbedderMismatch is returned when the Embedder the store was last
@@ -22,7 +22,7 @@ type StoredTurn struct {
 	Seq       int64
 	Namespace string
 	SessionID string
-	Turn      engine.Turn
+	Turn      domain.Turn
 }
 
 // SessionRef identifies one Session within a Namespace.
@@ -44,7 +44,7 @@ type PassageRecord struct {
 // semantics are channel-specific (cosine similarity for vector, ts_rank_cd
 // for lexical); only the rank order is contractual.
 type Candidate struct {
-	Passage engine.Passage
+	Passage domain.Passage
 	Score   float64
 }
 
@@ -75,7 +75,7 @@ type Store interface {
 	// transaction it enqueues consolidation work for each Session touched.
 	// Returns the Cursor covering every Turn in the Namespace after the call,
 	// so a fully redelivered request still yields a valid barrier position.
-	Ingest(ctx context.Context, namespace string, sessions []engine.Session) (engine.Cursor, error)
+	Ingest(ctx context.Context, namespace string, sessions []domain.Session) (domain.Cursor, error)
 
 	// EnsureEmbedder records emb as the indexed Embedder when none has been
 	// recorded yet (fresh store) and sizes the vector column and index to
@@ -89,7 +89,7 @@ type Store interface {
 	// with one already pending). Returns the Cursor covering every Turn in
 	// the store, so Settle(namespace, cursor) on any Namespace observes the
 	// Reindex completing.
-	BeginReindex(ctx context.Context, emb Embedder) (engine.Cursor, error)
+	BeginReindex(ctx context.Context, emb Embedder) (domain.Cursor, error)
 
 	// SessionTurns returns the Turns of one Session with fromSeq <= seq <=
 	// toSeq, in seq order. Pass fromSeq=0, toSeq=math.MaxInt64 for all.
@@ -119,7 +119,7 @@ type Store interface {
 
 	// Barrier reports whether every Turn in the Namespace at or below the
 	// cursor is queryable. It never blocks; the Engine polls it.
-	Barrier(ctx context.Context, namespace string, cursor engine.Cursor) (BarrierState, error)
+	Barrier(ctx context.Context, namespace string, cursor domain.Cursor) (BarrierState, error)
 }
 
 // ConsolidateArgs is the River job that derives Passages for the Turns of
