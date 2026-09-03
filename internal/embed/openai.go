@@ -86,7 +86,7 @@ func (o *OpenAI) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	return out, nil
 }
 
-func (o *OpenAI) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+func (o *OpenAI) embedBatch(ctx context.Context, texts []string) (result [][]float32, err error) {
 	body, err := json.Marshal(openAIRequest{Model: o.cfg.Model, Input: texts})
 	if err != nil {
 		return nil, fmt.Errorf("embed: encode request: %w", err)
@@ -106,7 +106,11 @@ func (o *OpenAI) embedBatch(ctx context.Context, texts []string) ([][]float32, e
 	if err != nil {
 		return nil, fmt.Errorf("embed: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("embed: close response body: %w", cerr)
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

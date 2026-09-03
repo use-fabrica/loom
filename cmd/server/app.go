@@ -7,22 +7,24 @@ import (
 
 	"go.uber.org/fx"
 	"go.uber.org/zap"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/use-fabrica/loom/internal/config"
 )
 
 // newHTTPServer builds the *http.Server exposing internal/api's mux over
-// h2c (HTTP/2 without TLS termination in front), so gRPC and Connect
-// clients get HTTP/2 while curl/JSON callers keep working on the same
-// port. fx starts it last, after the store and Engine have completed their
-// own OnStart (see main.go's module order), and stops it first on
-// shutdown.
+// unencrypted HTTP/2 (h2c) alongside HTTP/1.1 on the same port, so gRPC and
+// Connect clients get HTTP/2 while curl/JSON callers keep working. fx
+// starts it last, after the store and Engine have completed their own
+// OnStart (see main.go's module order), and stops it first on shutdown.
 func newHTTPServer(lc fx.Lifecycle, cfg *config.Config, mux *http.ServeMux, log *zap.Logger) *http.Server {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+
 	srv := &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: h2c.NewHandler(mux, &http2.Server{}),
+		Addr:      cfg.HTTPAddr,
+		Handler:   mux,
+		Protocols: protocols,
 	}
 
 	lc.Append(fx.Hook{

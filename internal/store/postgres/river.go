@@ -94,9 +94,12 @@ func runnerLogger() *slog.Logger {
 }
 
 // Start begins fetching and working jobs. It returns once startup completes;
-// work continues in the background until Stop.
+// work continues in the background until Stop. River keeps ctx as the
+// lifetime of its fetch loop and notifier, so the caller's start context
+// (fx hands lifecycle hooks a short deadline) is detached from cancellation
+// here: only Stop ends the Runner. Values on ctx still flow through.
 func (r *Runner) Start(ctx context.Context) error {
-	return r.client.Start(ctx)
+	return r.client.Start(context.WithoutCancel(ctx))
 }
 
 // Stop gracefully stops the Runner: it signals producers to stop fetching

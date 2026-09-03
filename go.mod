@@ -14,7 +14,6 @@ require (
 	github.com/riverqueue/river/rivertype v0.47.0
 	go.uber.org/fx v1.24.0
 	go.uber.org/zap v1.26.0
-	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
 	google.golang.org/protobuf v1.36.12
 )

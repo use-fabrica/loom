@@ -420,7 +420,7 @@ func TestReindexDimensionChange(t *testing.T) {
 	// Runner must stop first: left running, its ReindexWorker is still
 	// configured for the 8-dimension Embedder and would see the new reindex
 	// job as stale, canceling it before the new Runner claims it.
-	h.engineServer.stop()
+	h.stop()
 	fake16 := embed.NewFake("fake", 16)
 	h.engineServer = newEngineServer(t, ctx, h.store, h.log, fake16)
 
@@ -521,7 +521,7 @@ func TestRestartMidConsolidation(t *testing.T) {
 	})
 	waitForEmbedCall(ctx, t, h.fake, 1) // the ConsolidateWorker is now blocked inside Embed
 
-	h.engineServer.stop() // StopAndCancel: the blocked job's context is canceled mid-attempt
+	h.stop() // StopAndCancel: the blocked job's context is canceled mid-attempt
 
 	fresh := embed.NewFake("fake", fakeDimensions) // a restarted process starts with an unblocked Embedder
 	h.engineServer = newEngineServer(t, ctx, h.store, h.log, fresh)
@@ -615,7 +615,11 @@ func TestConnectJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("raw Connect JSON POST: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -11,8 +12,6 @@ import (
 	"github.com/riverqueue/river/rivertype"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/use-fabrica/loom/gen/loom/v1/loomv1connect"
 	"github.com/use-fabrica/loom/internal/api"
@@ -81,7 +80,12 @@ func newEngineServer(t *testing.T, ctx context.Context, st *postgres.Store, log 
 	}
 
 	mux := api.NewMux(eng, log, prometheus.NewRegistry())
-	srv := httptest.NewServer(h2c.NewHandler(mux, &http2.Server{}))
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Config.Protocols = protocols
+	srv.Start()
 
 	es := &engineServer{
 		engine: eng,

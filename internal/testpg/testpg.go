@@ -52,7 +52,11 @@ func New(t testing.TB) string {
 	if err != nil {
 		t.Fatalf("testpg: connect to admin database: %v", err)
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		if cerr := conn.Close(ctx); cerr != nil {
+			t.Logf("testpg: close admin connection: %v", cerr)
+		}
+	}()
 
 	if _, err := conn.Exec(ctx, `CREATE DATABASE `+dbName); err != nil {
 		t.Fatalf("testpg: create database %s: %v", dbName, err)
@@ -67,7 +71,11 @@ func New(t testing.TB) string {
 			t.Errorf("testpg: connect to admin database to drop %s: %v", dbName, err)
 			return
 		}
-		defer dropConn.Close(dropCtx)
+		defer func() {
+			if cerr := dropConn.Close(dropCtx); cerr != nil {
+				t.Logf("testpg: close admin connection after dropping %s: %v", dbName, cerr)
+			}
+		}()
 
 		// FORCE disconnects any sessions the test's own Store pool left open,
 		// so a forgotten Store.Close never leaks a database.
@@ -136,13 +144,13 @@ func startCluster() (string, error) {
 
 	port, err := freeTCPPort()
 	if err != nil {
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("find free port: %w", err)
 	}
 
 	initCmd := exec.Command(initdbPath, "-D", dir, "-U", "postgres", "--auth=trust", "-E", "UTF8")
 	if out, err := initCmd.CombinedOutput(); err != nil {
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("initdb: %w\n%s", err, out)
 	}
 
@@ -154,10 +162,10 @@ func startCluster() (string, error) {
 	// launch log goes to a real file, which Run doesn't block on.
 	logFile, err := os.Create(filepath.Join(dir, "pg_ctl_start.log"))
 	if err != nil {
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("create pg_ctl start log: %w", err)
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }()
 
 	options := fmt.Sprintf("-p %d -c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off -c full_page_writes=off", port)
 	startCmd := exec.Command(pgCtlPath, "-D", dir, "-o", options, "-w", "start")
@@ -165,7 +173,7 @@ func startCluster() (string, error) {
 	startCmd.Stderr = logFile
 	if err := startCmd.Run(); err != nil {
 		log, _ := os.ReadFile(logFile.Name())
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("pg_ctl start: %w\n%s", err, log)
 	}
 
@@ -183,7 +191,7 @@ func stopCluster() {
 	if clusterDir == "" {
 		return
 	}
-	defer os.RemoveAll(clusterDir)
+	defer func() { _ = os.RemoveAll(clusterDir) }()
 
 	pgCtlPath, err := exec.LookPath("pg_ctl")
 	if err != nil {
@@ -201,7 +209,7 @@ func freeTCPPort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 

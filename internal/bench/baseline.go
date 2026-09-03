@@ -83,13 +83,17 @@ func Compare(baseline, current *Report) []MetricDelta {
 
 // WriteTable renders deltas as an aligned METRIC/BASELINE/CURRENT/DELTA
 // table to w.
-func WriteTable(w io.Writer, deltas []MetricDelta) {
+func WriteTable(w io.Writer, deltas []MetricDelta) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "METRIC\tBASELINE\tCURRENT\tDELTA")
-	for _, d := range deltas {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", d.Metric, formatMetric(d.Baseline, d.HasBaseline), formatMetric(d.Current, d.HasCurrent), formatDelta(d))
+	if _, err := fmt.Fprintln(tw, "METRIC\tBASELINE\tCURRENT\tDELTA"); err != nil {
+		return err
 	}
-	tw.Flush()
+	for _, d := range deltas {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", d.Metric, formatMetric(d.Baseline, d.HasBaseline), formatMetric(d.Current, d.HasCurrent), formatDelta(d)); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
 }
 
 func formatMetric(v float64, present bool) string {
