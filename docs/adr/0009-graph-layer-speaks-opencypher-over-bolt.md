@@ -1,0 +1,5 @@
+# The graph layer speaks openCypher over Bolt; Neo4j Community is the first engine
+
+The graph retrieval step is committed to a protocol, not a vendor: Loom's graph layer is written against openCypher over Bolt, with Neo4j Community (separate service, official Apache-2.0 Go driver) as the first engine, shipped in the Helm chart from v0. Swapping the engine — notably to HydraDB, whose open-sourced core is deliberately Bolt-compatible — is a values change plus a Reindex, not code. Graph retrieval itself still only enters the retrieval pipeline when a Report shows a ceiling the baseline can't clear (multi-hop/temporal categories); the engine choice is fixed now so the schema and queries have a stable target.
+
+Rejected: Apache AGE (openCypher subset behind SQL wrapping fails the protocol contract; slow release cadence), FalkorDB (Redis protocol, not Bolt; SSPL), and adopting HydraDB immediately (AGPL v0.1, open-sourced days ago, requires S3-compatible storage — a challenger to re-evaluate, and also a direct commercial competitor to Loom).

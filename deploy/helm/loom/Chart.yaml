@@ -1,0 +1,6 @@
+apiVersion: v2
+name: loom
+description: Loom — a self-hostable context engine (v0 Engine baseline)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,97 @@
+# Default values for the Loom v0 Engine chart. See README.md for the full
+# CE_* configuration reference.
+
+image:
+  repository: ghcr.io/use-fabrica/loom
+  tag: "" # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+probes:
+  # Path the Engine's HTTP server serves a 200 "ok" on (see internal/api).
+  path: /healthz
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Non-secret CE_* environment, rendered into a ConfigMap and loaded with
+# envFrom. Keep CE_HTTP_ADDR's port in sync with service.targetPort above.
+config:
+  CE_HTTP_ADDR: ":8080"
+  CE_ENV: "production"
+  CE_EMBEDDER_BASE_URL: "https://api.openai.com/v1"
+  CE_EMBEDDER_MODEL: ""
+  CE_EMBEDDER_DIMENSIONS: ""
+
+# Secret CE_* environment (DB DSN, API key). Rendered into a Secret unless
+# existingSecret names one you manage yourself (same keys: CE_DATABASE_URL,
+# CE_EMBEDDER_API_KEY).
+secrets:
+  # Leave empty to derive automatically from `postgres` below.
+  CE_DATABASE_URL: ""
+  CE_EMBEDDER_API_KEY: ""
+  existingSecret: ""
+
+# ADR-0007: Postgres is the v0 store (pgvector + tsvector + River). image is
+# pinned to a specific pgvector release (not just `pg17`) so Store.Open's
+# version check (ADR-0007: pgvector >= 0.8.0) always sees a version it
+# accepts.
+postgres:
+  enabled: true
+  externalUrl: "" # used when enabled: false
+  image: pgvector/pgvector:0.8.6-pg17
+  storage: 10Gi
+  storageClassName: ""
+  auth:
+    user: loom
+    password: loom
+    database: loom
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# ADR-0009: graph layer, shipped from v0, not queried by the Engine yet.
+neo4j:
+  enabled: true
+  image: neo4j:5-community
+  auth: "neo4j/changeme" # neo4j's own "user/password" string
+  storage: 10Gi
+  storageClassName: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# Optional in-cluster Embedder so a cluster can run without a hosted API key.
+# When enabled, CE_EMBEDDER_BASE_URL is pointed at it automatically unless
+# config.CE_EMBEDDER_BASE_URL is set to a non-default value.
+embedder:
+  local:
+    enabled: false
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    model: BAAI/bge-small-en-v1.5
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi

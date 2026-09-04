@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Same pinned tag as deploy/compose/docker-compose.yaml and
+        # deploy/helm/loom/values.yaml (ADR-0007: pgvector >= 0.8.0). The
+        # image's own POSTGRES_USER is a superuser, which testpg.New needs
+        # to create and drop per-test databases on this admin DSN.
+        image: pgvector/pgvector:0.8.6-pg17
+        env:
+          POSTGRES_USER: loom
+          POSTGRES_PASSWORD: loom
+          POSTGRES_DB: loom
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./... -count=1
+        env:
+          CE_TEST_DATABASE_URL: postgres://loom:loom@localhost:5432/loom?sslmode=disable
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # v2 line, matching the devshell's golangci-lint; the action's
+      # "latest" resolves to a v1 build too old for this Go toolchain.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.1
+          args: >-
+            ./cmd/server/... ./internal/api/... ./internal/domain/...
+            ./internal/embed/... ./internal/engine/... ./internal/store/...
+            ./internal/testpg/... ./internal/config/...
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/loom
+      # Default: in-chart Postgres. The DSN the Engine boots with must name
+      # the Service the same chart emits, and the local Embedder must be off.
+      - name: Render default configuration
+        run: |
+          helm template loom deploy/helm/loom \
+            --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8 \
+            > render-default.yaml
+          svc=$(awk '/^kind: Service$/{s=1} s && /^  name: .*-postgres$/{print $2; exit}' render-default.yaml)
+          test -n "$svc"
+          grep -Fx "  CE_DATABASE_URL: \"postgres://loom:loom@${svc}:5432/loom?sslmode=disable\"" render-default.yaml
+          grep -Fx '  CE_EMBEDDER_BASE_URL: "https://api.openai.com/v1"' render-default.yaml
+          grep -c '^kind: StatefulSet$' render-default.yaml | grep -Fx 2
+      # External Postgres, caller-owned Secret, no Neo4j, in-chart Embedder:
+      # no chart Secret, the caller's Secret referenced, Loom pointed at TEI.
+      - name: Render external configuration
+        run: |
+          helm template loom deploy/helm/loom \
+            --set postgres.enabled=false --set postgres.externalUrl=postgres://external \
+            --set neo4j.enabled=false --set embedder.local.enabled=true \
+            --set secrets.existingSecret=loom-secrets \
+            --set config.CE_EMBEDDER_MODEL=m --set config.CE_EMBEDDER_DIMENSIONS=8 \
+            > render-external.yaml
+          ! grep -q '^kind: Secret$' render-external.yaml
+          ! grep -q '^kind: StatefulSet$' render-external.yaml
+          grep -Fx '                name: loom-secrets' render-external.yaml
+          tei=$(awk '/^kind: Service$/{s=1} s && /^  name: .*-tei$/{print $2; exit}' render-external.yaml)
+          test -n "$tei"
+          grep -Fx "  CE_EMBEDDER_BASE_URL: \"http://${tei}:80/v1\"" render-external.yaml

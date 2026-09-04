@@ -1,0 +1,22 @@
+# Keep the build context to what `go build ./cmd/server` actually needs.
+
+.git
+.gitignore
+.direnv
+.envrc
+.venv
+__pycache__
+*.pyc
+
+# Docs and deploy manifests never enter the binary.
+*.md
+docs/
+deploy/
+.agents/
+
+# Benchmark datasets/reports (potentially large, never imported by cmd/server).
+benchmark/
+
+flake.nix
+flake.lock
+skills-lock.json
